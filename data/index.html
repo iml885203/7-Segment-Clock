@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="./bootstrap.min.css">
+  <title>7SegmentClock</title>
+</head>
+<body>
+  <div class="jumbotron">
+    <h1 class="display-4 text-center">7 Segment Clock</h1>
+  </div>
+  <div class="container pb-5">
+    <div class="card mb-4">
+      <div class="card-header">資訊</div>
+      <div class="card-body">
+        <p>AP IP address: {{AP_IP}}</p>
+        <p>Local IP address: {{LOCAL_IP}}</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">參數設定</div>
+      <div class="card-body">
+        <form method="get" action="setting">
+          <h4>Wifi</h4>
+          <div class="form-group">
+            <label for="ssid">ssid</label>
+            <input type="text" class="form-control" id="ssid" name="ssid" value="{{WIFI_SSID}}">
+          </div>
+          <div class="form-group">
+            <label for="ssid_pwd">password</label>
+            <input type="text" class="form-control" id="ssid_pwd" name="ssid_pwd">
+          </div>
+          <button class="btn btn-primary">更改</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
