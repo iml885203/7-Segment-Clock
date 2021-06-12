@@ -13,13 +13,8 @@ const bool debug = false;
 const bool reset_eeprom = false;
 
 // Networking
-// Set offset time in seconds to adjust for your timezone, for example:
-// GMT +1 = 3600
-// GMT +8 = 28800
-// GMT -1 = -3600
-// GMT 0 = 0
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "tw.pool.ntp.org", 28800, 60000);
+NTPClient timeClient(ntpUDP);
 ESP8266WebServer server(80);
 EspHtmlTemplateProcessor templateProcessor(&server);
 String networkMode = "client";
@@ -118,14 +113,14 @@ void loop()
     if (lastMinute != minute())
     {
       lastMinute = minute();
-      if(lastMinute % 5 == 0)
+      if(lastMinute % 1 == 0)
       {
         syncNTP(); // run every 5 minutes
       }
     }
     if (networkMode == "client")
     {
-      displayTime(now() - 1); // remove seconds decimal point
+      displayTime(now());
     }
     else if (networkMode == "AP")
     {
@@ -279,9 +274,15 @@ void initWifiAndNTP()
     debugLog("[initWifiAndNTP] Wifi connected");
     debugLog(String("[initWifiAndNTP] IP address: ") + WiFi.localIP().toString());
     // NTP sync
+    // Set offset time in seconds to adjust for your timezone, for example:
+    // GMT +1 = 3600
+    // GMT +8 = 28800
+    // GMT -1 = -3600
+    // GMT 0 = 0
     debugLog("[initWifiAndNTP] NTP begin");
-    timeClient.begin();
     timeClient.setPoolServerName(myConfig.ntpServer.c_str());
+    timeClient.setTimeOffset(28800);
+    timeClient.begin();
     syncNTP();
   }
   else
@@ -313,7 +314,7 @@ void syncNTP()
   debugLog("[sync NTP] starting.");
   debugLog(String("[sync NTP] Current time: ") + now());
   timeClient.update();
-  time_t newTime = timeClient.getEpochTime();
+  time_t newTime = timeClient.getEpochTime() - 1; // remove seconds decimal point
   setTime(newTime);
   debugLog(String("[sync NTP] NTP time: ") + newTime + String(", NTP time(Format): ") + hour(newTime) + String(":") + minute(newTime) + String(":") + second(newTime));
   debugLog(String("[sync NTP] New time: ") + now() + String(", New time(Format): ") + hour() + String(":") + minute() + String(":") + second());
