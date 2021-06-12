@@ -9,7 +9,8 @@
 #include "EspHtmlTemplateProcessor.h"
 
 // DEBUG
-const bool debug = true;
+const bool debug = false;
+const bool reset_eeprom = false;
 
 // Networking
 // Set offset time in seconds to adjust for your timezone, for example:
@@ -23,6 +24,7 @@ ESP8266WebServer server(80);
 EspHtmlTemplateProcessor templateProcessor(&server);
 String networkMode = "client";
 byte reconnectWifiTimer = 0;
+byte rebootTimer = 0;
 
 // LED
 #define LED_PIN D5
@@ -32,9 +34,8 @@ byte reconnectWifiTimer = 0;
 #define LED_BETWEEN_DIGITS_STRIPS 2
 #define LED_COUNT (LED_DIGITS / 2) * LED_PER_DIGITS_STRIP + LED_BETWEEN_DIGITS_STRIPS * 1 + 3
 CRGB leds[LED_COUNT];
-byte brightness = 100;
-byte brightnessLevels[3] = {10, 100, 200};
-const byte brightnessLevelLength = sizeof(brightnessLevels) / sizeof(brightnessLevels[0]);
+byte brightness = 10;
+long colorhex = 0xffffff;
 
 // Segment
 byte segGroups[7] = {
@@ -66,15 +67,19 @@ byte digits[14][7] = {
 
 // Time
 byte lastSecond = 0;
+byte lastMinute = 0;
 #define IS_24_HOUR false
 
 // EEPROM Config
 struct ConfigData
 {
-  byte ledBrightnessType = 0;
+  byte ledBrightness = 15;
+  String ledColor = "#ffffff";
 
   String wifiSsid = "";
   String wifiPass = "";
+
+  String ntpServer = "tw.pool.ntp.org";
 } myConfig;
 
 // html
@@ -110,20 +115,24 @@ void loop()
   if (lastSecond != second())
   {
     lastSecond = second();
+    if (lastMinute != minute())
+    {
+      lastMinute = minute();
+      if(lastMinute % 5 == 0)
+      {
+        syncNTP(); // run every 5 minutes
+      }
+    }
     if (networkMode == "client")
     {
-      displayTime(now());
-      if (lastSecond == 0)
-      { // run every minutes
-        syncNTP();
-      }
+      displayTime(now() - 1); // remove seconds decimal point
     }
     else if (networkMode == "AP")
     {
       digitalWrite(LED_BUILTIN, (lastSecond % 2 == 0) ? LOW : HIGH);
-      leds[0] = (lastSecond % 2 == 0) ? CRGB::White : CRGB::Black;
-      leds[1] = (lastSecond % 2 == 0) ? CRGB::White : CRGB::Black;
-      leds[2] = (lastSecond % 2 == 0) ? CRGB::White : CRGB::Black;
+      leds[0] = (lastSecond % 2 == 0) ? colorhex : CRGB::Black;
+      leds[1] = (lastSecond % 2 == 0) ? colorhex : CRGB::Black;
+      leds[2] = (lastSecond % 2 == 0) ? colorhex : CRGB::Black;
       showDigit(4, 0);
       showDigit(3, 1);
       showDigit(2, 2);
@@ -137,6 +146,16 @@ void loop()
       if (reconnectWifiTimer == 0)
       {
         initWifiAndNTP();
+      }
+    }
+
+    if (rebootTimer > 0)
+    {
+      rebootTimer--;
+      debugLog(String("rebootTimer: ") + rebootTimer);
+      if (rebootTimer == 0)
+      {
+        ESP.restart();
       }
     }
   }
@@ -173,11 +192,11 @@ void displayTime(time_t t)
   showDigit((tMinute % 10), 3);
   // showDigit((tSecond / 10), 2);
   // showDigit((tSecond % 10), 3);
-  leds[0] = (lastSecond % 2 == 0) ? CRGB::White : CRGB::Black;
-  leds[1] = (lastSecond % 2 == 0) ? CRGB::White : CRGB::Black;
+  leds[0] = (lastSecond % 2 == 0) ? colorhex : CRGB::Black;
+  leds[1] = (lastSecond % 2 == 0) ? colorhex : CRGB::Black;
   if (hour(t) > 12)
   {
-    leds[2] = CRGB::White;
+    leds[2] = colorhex;
   }
 
   debugLog(String("[displayTime] ") + tHour + String(":") + tMinute + String(":") + tSecond);
@@ -196,7 +215,7 @@ void showDigit(byte digit, byte timePos)
     byte ledOffsetPos = timePos * 7;
     byte ledPos = segGroups[segPos] + ledOffsetPos - 1;
     // debugLog(String("ledPos: ") + ledPos);
-    leds[ledPos + 3] = CRGB::White;
+    leds[ledPos + 3] = colorhex;
   }
 }
 
@@ -206,20 +225,21 @@ void initEEPROM()
   loadConfigFromEEPROM();
 
   debugLog("[initEEPROM] get config from EEPROM:");
-  debugLog(String("ledBrightnessType: ") + String(myConfig.ledBrightnessType));
+  debugLog(String("led brightness: ") + String(myConfig.ledBrightness));
+  debugLog(String("led color: ") + myConfig.ledColor);
   debugLog(String("wifi ssid: ") + myConfig.wifiSsid);
   debugLog(String("wifi pass: ") + myConfig.wifiPass);
+  debugLog(String("ntp server: ") + myConfig.ntpServer);
 }
 
 void initBrightness()
 {
-  debugLog(String("[initBrightness] EEPROM value: ") + myConfig.ledBrightnessType);
+  debugLog(String("[initBrightness] EEPROM value: ") + myConfig.ledBrightness);
   debugLog("[initBrightness] init...");
-  if (myConfig.ledBrightnessType < brightnessLevelLength)
+  if (myConfig.ledBrightness >= 0 && myConfig.ledBrightness <= 255)
   {
-    brightness = brightnessLevels[myConfig.ledBrightnessType];
+    brightness = myConfig.ledBrightness;
   }
-  debugLog(String("[initBrightness] ledBrightnessType: ") + myConfig.ledBrightnessType + String(", brightness: ") + brightness);
 }
 
 void initLed()
@@ -261,6 +281,7 @@ void initWifiAndNTP()
     // NTP sync
     debugLog("[initWifiAndNTP] NTP begin");
     timeClient.begin();
+    timeClient.setPoolServerName(myConfig.ntpServer.c_str());
     syncNTP();
   }
   else
@@ -271,7 +292,7 @@ void initWifiAndNTP()
 
 bool testWifi(void)
 {
-  byte retry = 30;
+  byte retry = 60;
   while (retry--)
   {
     if (WiFi.status() == WL_CONNECTED)
@@ -292,8 +313,9 @@ void syncNTP()
   debugLog("[sync NTP] starting.");
   debugLog(String("[sync NTP] Current time: ") + now());
   timeClient.update();
-  setTime(timeClient.getEpochTime());
-  debugLog(String("[sync NTP] NTP time: ") + timeClient.getEpochTime() + String(", NTP time(Format): ") + timeClient.getFormattedTime());
+  time_t newTime = timeClient.getEpochTime();
+  setTime(newTime);
+  debugLog(String("[sync NTP] NTP time: ") + newTime + String(", NTP time(Format): ") + hour(newTime) + String(":") + minute(newTime) + String(":") + second(newTime));
   debugLog(String("[sync NTP] New time: ") + now() + String(", New time(Format): ") + hour() + String(":") + minute() + String(":") + second());
   debugLog("[sync NTP] done.");
 }
@@ -322,41 +344,85 @@ String indexKeyProcessor(const String &key)
   {
     return myConfig.wifiSsid;
   }
+  else if (key == "WIFI_PASSWORD")
+  {
+    return myConfig.wifiPass;
+  }
+  else if (key == "LED_BRIGHTNESS")
+  {
+    return String(myConfig.ledBrightness);
+  }
+  else if (key == "LED_COLOR")
+  {
+    return myConfig.ledColor;
+  }
+  else if (key == "NTP_SERVER")
+  {
+    return myConfig.ntpServer;
+  }
 
   return "Key not found";
 }
 
 void initWeb()
 {
-  server.on("/", []() {
-    templateProcessor.processAndSend("/index.html", indexKeyProcessor);
-  });
-  server.on("/bootstrap.min.css", []() {
-    File file = SPIFFS.open("/bootstrap.min.css", "r");
-    server.streamFile(file, "text/css");
-    file.close();
-  });
-  server.on("/setting", []() {
-    String qsid = server.arg("ssid");
-    String qpass = server.arg("ssid_pwd");
-    debugLog(String("get ssid: ") + qsid + String(", pass: ") + qpass);
-    if (qsid.length() > 0 && qpass.length() > 0)
-    {
-      debugLog("[http] writing eeprom");
-      myConfig.wifiSsid = qsid;
-      myConfig.wifiPass = qpass;
-      saveConfigToEEPROM();
-      server.sendHeader("Location", String("/"), true);
-      server.send(302, "text/plain", "");
-      reconnectWifiTimer = 3;
-    }
-    else
-    {
-      debugLog("[http] get setting 404");
-      server.sendHeader("Access-Control-Allow-Origin", "*");
-      server.send(400, "application/json", "{\"Error\":\"setting error.\"}");
-    }
-  });
+  server.on("/", []()
+            { templateProcessor.processAndSend("/index.html", indexKeyProcessor); });
+  server.on("/bootstrap.min.css", []()
+            {
+              File file = SPIFFS.open("/bootstrap.min.css", "r");
+              server.streamFile(file, "text/css");
+              file.close();
+            });
+  server.on("/reboot", []()
+            {
+              server.sendHeader("Location", String("/"), true);
+              server.send(302, "text/plain", "");
+              rebootTimer = 1;
+            });
+  server.on("/setting", []()
+            {
+              bool updateEEPROM = false;
+              if (server.hasArg("ssid") && server.hasArg("ssid_pwd") && (myConfig.wifiSsid != server.arg("ssid") || myConfig.wifiPass != server.arg("ssid_pwd")))
+              {
+                debugLog(String("update ssid: ") + server.arg("ssid") + String(", pass: ") + server.arg("ssid_pwd"));
+                myConfig.wifiSsid = server.arg("ssid");
+                myConfig.wifiPass = server.arg("ssid_pwd");
+                reconnectWifiTimer = 1;
+                updateEEPROM = true;
+              }
+              if (server.hasArg("led_brightness") && myConfig.ledBrightness != server.arg("led_brightness").toInt())
+              {
+                debugLog(String("update led brightness: ") + server.arg("led_brightness"));
+                myConfig.ledBrightness = server.arg("led_brightness").toInt();
+                FastLED.setBrightness(myConfig.ledBrightness);
+                updateEEPROM = true;
+              }
+              if (server.hasArg("led_color") && myConfig.ledColor != server.arg("led_color"))
+              {
+                myConfig.ledColor = server.arg("led_color");
+                colorhex = strtol(myConfig.ledColor.substring(1).c_str(), NULL, 16);
+                updateEEPROM = true;
+              }
+              if (server.hasArg("ntp_server") && myConfig.ntpServer != server.arg("ntp_server"))
+              {
+                myConfig.ntpServer = server.arg("ntp_server");
+                timeClient.setPoolServerName(server.arg("ntp_server").c_str());
+                syncNTP();
+                updateEEPROM = true;
+              }
+              if (updateEEPROM)
+              {
+                debugLog("[http] writing eeprom");
+                saveConfigToEEPROM();
+              }
+              else
+              {
+                debugLog("[http] eeprom not change");
+              }
+              server.sendHeader("Location", String("/"), true);
+              server.send(302, "text/plain", "");
+            });
 
   server.begin();
 
@@ -368,22 +434,30 @@ void initWeb()
 */
 void loadConfigFromEEPROM()
 {
-  myConfig.ledBrightnessType = 0;
-  myConfig.wifiSsid = "";
-  myConfig.wifiPass = "";
-
-  myConfig.ledBrightnessType = EEPROM.read(0);
-  int offset = 1;
-  offset = readStringFromEEPROM(offset, &myConfig.wifiSsid);
-  offset = readStringFromEEPROM(offset, &myConfig.wifiPass);
+  if (reset_eeprom)
+  {
+    saveConfigToEEPROM();
+  }
+  else
+  {
+    myConfig.ledBrightness = EEPROM.read(0);
+    int offset = 1;
+    offset = readStringFromEEPROM(offset, &myConfig.ledColor);
+    offset = readStringFromEEPROM(offset, &myConfig.wifiSsid);
+    offset = readStringFromEEPROM(offset, &myConfig.wifiPass);
+    offset = readStringFromEEPROM(offset, &myConfig.ntpServer);
+    colorhex = strtol(myConfig.ledColor.substring(1).c_str(), NULL, 16);
+  }
 }
 
 void saveConfigToEEPROM()
 {
-  EEPROM.write(0, myConfig.ledBrightnessType);
+  EEPROM.write(0, myConfig.ledBrightness);
   int offset = 1;
+  offset = writeStringToEEPROM(offset, myConfig.ledColor);
   offset = writeStringToEEPROM(offset, myConfig.wifiSsid);
   offset = writeStringToEEPROM(offset, myConfig.wifiPass);
+  offset = writeStringToEEPROM(offset, myConfig.ntpServer);
   EEPROM.commit();
 }
 
