@@ -113,9 +113,9 @@ void loop()
     if (lastMinute != minute())
     {
       lastMinute = minute();
-      if(lastMinute % 1 == 0)
+      if(lastMinute % 5 == 0) // run every 5 minutes
       {
-        syncNTP(); // run every 5 minutes
+        syncNTP();
       }
     }
     if (networkMode == "client")
@@ -312,13 +312,16 @@ bool testWifi(void)
 void syncNTP()
 {
   debugLog("[sync NTP] starting.");
-  debugLog(String("[sync NTP] Current time: ") + now());
-  timeClient.update();
-  time_t newTime = timeClient.getEpochTime() - 1; // remove seconds decimal point
-  setTime(newTime);
-  debugLog(String("[sync NTP] NTP time: ") + newTime + String(", NTP time(Format): ") + hour(newTime) + String(":") + minute(newTime) + String(":") + second(newTime));
-  debugLog(String("[sync NTP] New time: ") + now() + String(", New time(Format): ") + hour() + String(":") + minute() + String(":") + second());
-  debugLog("[sync NTP] done.");
+  if(timeClient.update())
+  {
+    time_t newTime = timeClient.getEpochTime() - 1; // remove seconds decimal point
+    setTime(newTime);
+    debugLog(String("[sync NTP] NTP time: ") + hour(newTime) + String(":") + minute(newTime) + String(":") + second(newTime));
+  }
+  else
+  {
+    debugLog(String("[sync NTP] update failed, current time: ") + hour() + String(":") + minute() + String(":") + second());
+  }
 }
 
 void setupAP()
