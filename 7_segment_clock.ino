@@ -10,7 +10,7 @@
 
 // DEBUG
 const bool debug = false;
-const bool reset_eeprom = false;
+const bool reset_eeprom = false; // set true if flash first time
 
 // Networking
 WiFiUDP ntpUDP;

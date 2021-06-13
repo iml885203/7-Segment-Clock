@@ -15,6 +15,15 @@
 
 ![image](https://github.com/iml885203/7-Segment-Clock/blob/master/Screenshot/hardware.jpg?raw=true)
 
+# 安裝
+使用[Arduino IDE](https://www.arduino.cc/en/software)
+
+先上傳SPIFFS再刷.ino檔案
+
+第一次請把`reset_eeprom`設為true，初始化eeprom
+
+根據妳的LED燈條擺放順序調整.ino裡面的設定
+
 # 設定
 
 ## 初次設定
