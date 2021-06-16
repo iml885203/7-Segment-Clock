@@ -321,7 +321,7 @@ bool testWifi(void)
 void syncNTP()
 {
   debugLog("[sync NTP] starting.");
-  if(timeClient.update())
+  if(timeClient.forceUpdate())
   {
     lastUpdatedTime = timeClient.getEpochTime() - 1; // remove seconds decimal point
     setTime(lastUpdatedTime);
