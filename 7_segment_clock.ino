@@ -7,9 +7,10 @@
 #include <ESP8266WebServer.h>
 #include <FS.h>
 #include "EspHtmlTemplateProcessor.h"
+#include <Ticker.h>
 
 // DEBUG
-const bool debug = true;
+const bool debug = false;
 const bool reset_eeprom = false; // set true if flash first time
 
 // Networking
@@ -25,7 +26,8 @@ time_t lastUpdatedTime;
 // NTP
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
-
+Ticker syncNTPInterval;
+float syncNTPIntervalSeconds = 300;
 
 // LED
 #define LED_PIN D5
@@ -119,10 +121,10 @@ void loop()
     if (lastMinute != minute())
     {
       lastMinute = minute();
-      if(lastMinute % 1 == 0) // run every 5 minutes
-      {
-        syncNTP();
-      }
+      // if(lastMinute % 5 == 0) // run every 5 minutes
+      // {
+      //   syncNTP();
+      // }
     }
     if (networkMode == "client")
     {
@@ -290,6 +292,7 @@ void initWifiAndNTP()
     timeClient.setTimeOffset(28800);
     timeClient.begin();
     syncNTP();
+    syncNTPInterval.attach(syncNTPIntervalSeconds, syncNTP);
   }
   else
   {
