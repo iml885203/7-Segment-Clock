@@ -9,17 +9,23 @@
 #include "EspHtmlTemplateProcessor.h"
 
 // DEBUG
-const bool debug = false;
+const bool debug = true;
 const bool reset_eeprom = false; // set true if flash first time
 
 // Networking
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP);
 ESP8266WebServer server(80);
 EspHtmlTemplateProcessor templateProcessor(&server);
 String networkMode = "client";
+
+// Timer
 byte reconnectWifiTimer = 0;
 byte rebootTimer = 0;
+time_t lastUpdatedTime;
+
+// NTP
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
+
 
 // LED
 #define LED_PIN D5
@@ -113,7 +119,7 @@ void loop()
     if (lastMinute != minute())
     {
       lastMinute = minute();
-      if(lastMinute % 5 == 0) // run every 5 minutes
+      if(lastMinute % 1 == 0) // run every 5 minutes
       {
         syncNTP();
       }
@@ -314,9 +320,9 @@ void syncNTP()
   debugLog("[sync NTP] starting.");
   if(timeClient.update())
   {
-    time_t newTime = timeClient.getEpochTime() - 1; // remove seconds decimal point
-    setTime(newTime);
-    debugLog(String("[sync NTP] NTP time: ") + hour(newTime) + String(":") + minute(newTime) + String(":") + second(newTime));
+    lastUpdatedTime = timeClient.getEpochTime() - 1; // remove seconds decimal point
+    setTime(lastUpdatedTime);
+    debugLog(String("[sync NTP] NTP time: ") + hour(lastUpdatedTime) + String(":") + minute(lastUpdatedTime) + String(":") + second(lastUpdatedTime));
   }
   else
   {
@@ -363,6 +369,10 @@ String indexKeyProcessor(const String &key)
   else if (key == "NTP_SERVER")
   {
     return myConfig.ntpServer;
+  }
+  else if (key == "NTP_LAST_UPDATED")
+  {
+    return String(hour(lastUpdatedTime)) + String(":") + String(minute(lastUpdatedTime)) + String(":") + String(second(lastUpdatedTime));
   }
 
   return "Key not found";
