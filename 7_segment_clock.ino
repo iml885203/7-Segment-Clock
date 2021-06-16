@@ -7,7 +7,6 @@
 #include <ESP8266WebServer.h>
 #include <FS.h>
 #include "EspHtmlTemplateProcessor.h"
-#include <Ticker.h>
 
 // DEBUG
 const bool debug = false;
@@ -26,8 +25,7 @@ time_t lastUpdatedTime;
 // NTP
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
-Ticker syncNTPInterval;
-float syncNTPIntervalSeconds = 300;
+unsigned long ntpUpdateInterval = 60000; // ms
 
 // LED
 #define LED_PIN D5
@@ -115,20 +113,14 @@ void setup()
 void loop()
 {
   // run every second
-  if (lastSecond != second())
+  int currentSeconds = timeClient.getSeconds();
+  if (lastSecond != currentSeconds)
   {
-    lastSecond = second();
-    if (lastMinute != minute())
-    {
-      lastMinute = minute();
-      // if(lastMinute % 5 == 0) // run every 5 minutes
-      // {
-      //   syncNTP();
-      // }
-    }
+    lastSecond = currentSeconds;
     if (networkMode == "client")
     {
-      displayTime(now());
+      timeClient.update();
+      displayTime(timeClient.getEpochTime());
     }
     else if (networkMode == "AP")
     {
@@ -282,17 +274,11 @@ void initWifiAndNTP()
     debugLog("[initWifiAndNTP] Wifi connected");
     debugLog(String("[initWifiAndNTP] IP address: ") + WiFi.localIP().toString());
     // NTP sync
-    // Set offset time in seconds to adjust for your timezone, for example:
-    // GMT +1 = 3600
-    // GMT +8 = 28800
-    // GMT -1 = -3600
-    // GMT 0 = 0
     debugLog("[initWifiAndNTP] NTP begin");
     timeClient.setPoolServerName(myConfig.ntpServer.c_str());
-    timeClient.setTimeOffset(28800);
+    timeClient.setTimeOffset(60*60*8); // GMT +8
+    timeClient.setUpdateInterval(ntpUpdateInterval);
     timeClient.begin();
-    syncNTP();
-    syncNTPInterval.attach(syncNTPIntervalSeconds, syncNTP);
   }
   else
   {
@@ -316,21 +302,6 @@ bool testWifi(void)
   Serial.println("");
   debugLog("Connect timed out, opening AP");
   return false;
-}
-
-void syncNTP()
-{
-  debugLog("[sync NTP] starting.");
-  if(timeClient.forceUpdate())
-  {
-    lastUpdatedTime = timeClient.getEpochTime() - 1; // remove seconds decimal point
-    setTime(lastUpdatedTime);
-    debugLog(String("[sync NTP] NTP time: ") + hour(lastUpdatedTime) + String(":") + minute(lastUpdatedTime) + String(":") + second(lastUpdatedTime));
-  }
-  else
-  {
-    debugLog(String("[sync NTP] update failed, current time: ") + hour() + String(":") + minute() + String(":") + second());
-  }
 }
 
 void setupAP()
@@ -373,9 +344,9 @@ String indexKeyProcessor(const String &key)
   {
     return myConfig.ntpServer;
   }
-  else if (key == "NTP_LAST_UPDATED")
+  else if (key == "CURRENT_TIME")
   {
-    return String(hour(lastUpdatedTime)) + String(":") + String(minute(lastUpdatedTime)) + String(":") + String(second(lastUpdatedTime));
+    return timeClient.getFormattedTime();
   }
 
   return "Key not found";
@@ -425,7 +396,7 @@ void initWeb()
               {
                 myConfig.ntpServer = server.arg("ntp_server");
                 timeClient.setPoolServerName(server.arg("ntp_server").c_str());
-                syncNTP();
+                timeClient.forceUpdate();
                 updateEEPROM = true;
               }
               if (updateEEPROM)
