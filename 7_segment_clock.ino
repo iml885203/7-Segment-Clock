@@ -1,12 +1,14 @@
 #include <FastLED.h>
-#include <TimeLib.h>
 #include <EEPROM.h>
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
-#include <NTPClient.h>
 #include <ESP8266WebServer.h>
 #include <FS.h>
 #include "EspHtmlTemplateProcessor.h"
+#include <TZ.h>
+#include <PolledTimeout.h>
+#include <time.h>
+#include <coredecls.h> // settimeofday_cb()
 
 // DEBUG
 const bool debug = false;
@@ -18,14 +20,14 @@ EspHtmlTemplateProcessor templateProcessor(&server);
 String networkMode = "client";
 
 // Timer
+static esp8266::polledTimeout::periodicMs runEverySecond(1000);
 byte reconnectWifiTimer = 0;
 byte rebootTimer = 0;
-time_t lastUpdatedTime;
 
 // NTP
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP);
-unsigned long ntpUpdateInterval = 60000; // ms
+#define MYTZ TZ_Asia_Taipei
+time_t ntpLastUpdate;
+static uint32 ntpUpdateDelayMs = 3600000;
 
 // LED
 #define LED_PIN D5
@@ -37,6 +39,7 @@ unsigned long ntpUpdateInterval = 60000; // ms
 CRGB leds[LED_COUNT];
 byte brightness = 10;
 long colorhex = 0xffffff;
+bool blankLED = false;
 
 // Segment
 byte segGroups[7] = {
@@ -67,9 +70,9 @@ byte digits[14][7] = {
 };
 
 // Time
-byte lastSecond = 0;
-byte lastMinute = 0;
 #define IS_24_HOUR false
+static time_t currentTime;
+struct tm *localTimeInfo;
 
 // EEPROM Config
 struct ConfigData
@@ -113,21 +116,21 @@ void setup()
 void loop()
 {
   // run every second
-  int currentSeconds = timeClient.getSeconds();
-  if (lastSecond != currentSeconds)
+  if (runEverySecond)
   {
-    lastSecond = currentSeconds;
+    blankLED = !blankLED;
     if (networkMode == "client")
     {
-      timeClient.update();
-      displayTime(timeClient.getEpochTime());
+      currentTime = time(nullptr);
+      localTimeInfo = localtime(&currentTime);
+      displayTime(localTimeInfo);
     }
     else if (networkMode == "AP")
     {
-      digitalWrite(LED_BUILTIN, (lastSecond % 2 == 0) ? LOW : HIGH);
-      leds[0] = (lastSecond % 2 == 0) ? colorhex : CRGB::Black;
-      leds[1] = (lastSecond % 2 == 0) ? colorhex : CRGB::Black;
-      leds[2] = (lastSecond % 2 == 0) ? colorhex : CRGB::Black;
+      digitalWrite(LED_BUILTIN, blankLED ? LOW : HIGH);
+      leds[0] = blankLED ? colorhex : CRGB::Black;
+      leds[1] = blankLED ? colorhex : CRGB::Black;
+      leds[2] = blankLED ? colorhex : CRGB::Black;
       showDigit(4, 0);
       showDigit(3, 1);
       showDigit(2, 2);
@@ -159,7 +162,7 @@ void loop()
   server.handleClient();
 }
 
-void displayTime(time_t t)
+void displayTime(const tm *t)
 {
   for (int i = 0; i < LED_COUNT; i++)
   {
@@ -169,14 +172,18 @@ void displayTime(time_t t)
   int tHour = 0;
   if (IS_24_HOUR)
   {
-    tHour = hour(t);
+    tHour = t->tm_hour;
   }
   else
   {
-    tHour = hourFormat12(t);
+    tHour = t->tm_hour;
+    if (tHour == 0)
+      tHour = 12;
+    else
+      tHour = tHour > 12 ? tHour - 12 : tHour;
   }
-  int tMinute = minute(t);
-  int tSecond = second(t);
+  int tMinute = t->tm_min;
+  int tSecond = t->tm_sec;
 
   if (tHour / 10 > 0)
   {
@@ -187,9 +194,9 @@ void displayTime(time_t t)
   showDigit((tMinute % 10), 3);
   // showDigit((tSecond / 10), 2);
   // showDigit((tSecond % 10), 3);
-  leds[0] = (lastSecond % 2 == 0) ? colorhex : CRGB::Black;
-  leds[1] = (lastSecond % 2 == 0) ? colorhex : CRGB::Black;
-  if (hour(t) > 12)
+  leds[0] = blankLED ? colorhex : CRGB::Black;
+  leds[1] = blankLED ? colorhex : CRGB::Black;
+  if (t->tm_hour > 12)
   {
     leds[2] = colorhex;
   }
@@ -275,15 +282,28 @@ void initWifiAndNTP()
     debugLog(String("[initWifiAndNTP] IP address: ") + WiFi.localIP().toString());
     // NTP sync
     debugLog("[initWifiAndNTP] NTP begin");
-    timeClient.setPoolServerName(myConfig.ntpServer.c_str());
-    timeClient.setTimeOffset(60*60*8); // GMT +8
-    timeClient.setUpdateInterval(ntpUpdateInterval);
-    timeClient.begin();
+    configTime(MYTZ, myConfig.ntpServer.c_str());
+    settimeofday_cb(handleSetTime);
   }
   else
   {
     setupAP();
   }
+}
+
+// OPTIONAL: change SNTP update delay
+// a weak function is already defined and returns 1 hour
+// it can be redefined:
+uint32_t sntp_update_delay_MS_rfc_not_less_than_15000()
+{
+  //info_sntp_update_delay_MS_rfc_not_less_than_15000_has_been_called = true;
+  return ntpUpdateDelayMs;
+}
+
+void handleSetTime()
+{
+  ntpLastUpdate = time(nullptr);
+  debugLog("[handleSetTime] time: " + getFormattedTime(localtime(&ntpLastUpdate)));
 }
 
 bool testWifi(void)
@@ -317,37 +337,23 @@ void setupAP()
 String indexKeyProcessor(const String &key)
 {
   if (key == "AP_IP")
-  {
     return WiFi.softAPIP().toString();
-  }
   else if (key == "LOCAL_IP")
-  {
     return WiFi.localIP().toString();
-  }
   else if (key == "WIFI_SSID")
-  {
     return myConfig.wifiSsid;
-  }
   else if (key == "WIFI_PASSWORD")
-  {
     return myConfig.wifiPass;
-  }
   else if (key == "LED_BRIGHTNESS")
-  {
     return String(myConfig.ledBrightness);
-  }
   else if (key == "LED_COLOR")
-  {
     return myConfig.ledColor;
-  }
   else if (key == "NTP_SERVER")
-  {
     return myConfig.ntpServer;
-  }
   else if (key == "CURRENT_TIME")
-  {
-    return timeClient.getFormattedTime();
-  }
+    return getFormattedTime(localTimeInfo);
+  else if (key == "NTP_LAST_UPDATE")
+    return getFormattedDateTime(localtime(&ntpLastUpdate));
 
   return "Key not found";
 }
@@ -395,8 +401,7 @@ void initWeb()
               if (server.hasArg("ntp_server") && myConfig.ntpServer != server.arg("ntp_server"))
               {
                 myConfig.ntpServer = server.arg("ntp_server");
-                timeClient.setPoolServerName(server.arg("ntp_server").c_str());
-                timeClient.forceUpdate();
+                configTime(MYTZ, server.arg("ntp_server").c_str());
                 updateEEPROM = true;
               }
               if (updateEEPROM)
@@ -415,6 +420,22 @@ void initWeb()
   server.begin();
 
   debugLog("[init Web] HTTP server started");
+}
+
+String getFormattedTime(const tm *tm)
+{
+  char result[8];
+  os_sprintf(result, "%02d:%02d:%02d", tm->tm_hour, tm->tm_min, tm->tm_sec);
+  return String(result);
+}
+
+String getFormattedDateTime(const tm *tm)
+{
+  char result[19];
+  os_sprintf(result, "%02d/%02d/%02d %02d:%02d:%02d",
+             1900 + tm->tm_year, 1 + tm->tm_mon, tm->tm_mday,
+             tm->tm_hour, tm->tm_min, tm->tm_sec);
+  return String(result);
 }
 
 /*
@@ -483,7 +504,5 @@ int readStringFromEEPROM(int offset, String *strToRead)
 void debugLog(String writeSomething)
 {
   if (debug)
-  {
     Serial.println(writeSomething);
-  }
 }
