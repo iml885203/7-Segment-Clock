@@ -61,3 +61,10 @@ switch:
 |把`數位時鐘`加進去晚安情境|並且增加一個自動化，於早上打開|
 |:-:|:-:|
 |<img src="https://github.com/iml885203/7-Segment-Clock/blob/master/Screenshot/homekit1.jpg?raw=true" width="250px">|<img src="https://github.com/iml885203/7-Segment-Clock/blob/master/Screenshot/homekit2.jpg?raw=true" width="250px">|
+
+<p align="center">
+<br>
+<a href="https://www.buymeacoffee.com/dodoro" target="_blank">
+  <img src="https://github.com/appcraftstudio/buymeacoffee/raw/master/Images/snapshot-bmc-button.png" width="300">
+</a>
+</p>
