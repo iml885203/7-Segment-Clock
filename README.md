@@ -3,7 +3,7 @@
 
 使用ESP8266與LED燈條自製的NTP數位時鐘，可透過網頁控制亮度與顏色
 
-![image](https://github.com/iml885203/7-Segment-Clock/blob/master/Screenshot/demo.jpg?raw=true)
+![image](https://github.com/iml885203/7-Segment-Clock/blob/master/Screenshot/banner.jpg?raw=true)
 
 # 硬體
 
@@ -33,7 +33,7 @@
 
 之後每5分鐘會自動同步時間
 
-![image](https://github.com/iml885203/7-Segment-Clock/blob/master/Screenshot/web.jpg?raw=true)
+![image](https://github.com/iml885203/7-Segment-Clock/blob/master/Screenshot/webui.jpg?raw=true)
 
 ## 自動化
 透過curl可以控制時鐘的顏色與亮度
