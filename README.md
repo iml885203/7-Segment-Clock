@@ -58,10 +58,6 @@ switch:
 
 由於我每天會使用Homekit的`晚安`情境，所以透過HomeAssistant串接到Homekit上
 
-把`數位時鐘`加進去晚安情境
-
-<img src="https://github.com/iml885203/7-Segment-Clock/blob/master/Screenshot/homekit1.jpg?raw=true" width="250px">
-
-並且增加一個自動化，於早上打開
-
-<img src="https://github.com/iml885203/7-Segment-Clock/blob/master/Screenshot/homekit2.jpg?raw=true" width="250px">
+|把`數位時鐘`加進去晚安情境|並且增加一個自動化，於早上打開|
+|:-:|:-:|
+|<img src="https://github.com/iml885203/7-Segment-Clock/blob/master/Screenshot/homekit1.jpg?raw=true" width="250px">|<img src="https://github.com/iml885203/7-Segment-Clock/blob/master/Screenshot/homekit2.jpg?raw=true" width="250px">|
